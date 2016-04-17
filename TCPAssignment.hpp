@@ -36,6 +36,7 @@ struct TCPHeader {
 	uint32_t sequence_num; //sequence number
 	uint32_t ack_num; //acknowledgement number
 
+	/*
 	uint8_t offset; //offset
 
 	//control bits;
@@ -45,7 +46,9 @@ struct TCPHeader {
 	uint8_t rst; // & 0x04
 	uint8_t syn; // & 0x02
 	uint8_t fin; // & 0x01
-	 
+	 */
+	uint16_t off_control; //offset + reserved + control bits
+
 	uint16_t window; //window
 	uint16_t checksum; //checksum
 	uint16_t urg_ptr; //urgent pointer
@@ -70,11 +73,12 @@ struct SocketData
 	uint16_t sin_port;
 	struct in_addr sin_addr;
 	socklen_t sin_addr_len;
-	//uint8_t pin_family;
-	//uint16_t pin_port;
-	//struct in_addr pin_addr;
+	uint8_t pin_family;
+	uint16_t pin_port;
+	struct in_addr pin_addr;
 
 	State state;
+	int backlog;
 };
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
