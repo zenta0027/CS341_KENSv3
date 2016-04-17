@@ -51,6 +51,16 @@ struct TCPHeader {
 	uint16_t urg_ptr; //urgent pointer
 };
 
+enum State //to implement TCP 3-way handshaking
+{ 
+	SYN_SENT, //client - send SYN packet
+	CLOSED, //server - port closed
+	LISTEN, //server - port servicing
+	SYN_RECEIVED, //server - get SYN and send SYN+ACK
+	ESTABLISHED, //client - get SYN+ACK or server - get ACK
+	//see http://mintnlatte.tistory.com/552
+};
+
 struct SocketData
 {
 	UUID socketUUID;
@@ -63,6 +73,8 @@ struct SocketData
 	//uint8_t pin_family;
 	//uint16_t pin_port;
 	//struct in_addr pin_addr;
+
+	State state;
 };
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
