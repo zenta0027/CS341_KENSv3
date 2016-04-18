@@ -287,7 +287,8 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 	}
 	socketData->state = LISTEN;
 	socketData->backlog = backlog;
-	//socketData->backlog_queue = new Queue<>;
+	//socketData->backlog_queue = new Queue<struct Connection*>;
+	//socketData->handshake_queue = new Queue<struct SocketData*>;
 	returnSystemCall(syscallUUID, 0);
 	return;
 }

@@ -64,6 +64,13 @@ enum State //to implement TCP 3-way handshaking
 	//see http://mintnlatte.tistory.com/552
 };
 
+struct Connection
+{
+	uint32_t seq;
+	uint32_t ack;
+	sockaddr_in *src;
+};
+
 struct SocketData
 {
 	UUID socketUUID;
@@ -76,7 +83,7 @@ struct SocketData
 	uint8_t pin_family;
 	uint16_t pin_port;
 	struct in_addr pin_addr;
-	
+
 	State state;
 	int backlog;
 };
