@@ -34,7 +34,7 @@ struct TCPHeader {
 	uint16_t src_port; //source port
 	uint16_t dst_port; //destination port
 	uint32_t sequence_num; //sequence number
-	uint32_t ack_num; //acknowledgement number
+	uint32_t ack_num; //acknowledgement number
 
 	/*
 	uint8_t offset; //offset
@@ -51,7 +51,7 @@ struct TCPHeader {
 
 	uint16_t window; //window
 	uint16_t checksum; //checksum
-	uint16_t urg_ptr; //urgent pointer
+	uint16_t urg_ptr; //urgent pointer
 };
 
 enum State //to implement TCP 3-way handshaking

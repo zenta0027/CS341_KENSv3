@@ -95,8 +95,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	packet->readData(0, &header, sizeof(struct TCPHeader));
 	uint16_t TCP_control = header.off_control;	
 	bool found = false;
-	
-	struct sockaddr_in *addr_in = (struct sockaddr_in *)my_addr;
+	struct SocketData *socketData;
 
 	for (int i = 0; i < (int)socketList.size(); i++)
 	{
@@ -104,6 +103,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		{
 			if(socketList[i]->pin_port == header.src_port && socketList[i]->pin_addr.s_addr == 0/* TODO: Replace with Source ip */)
 			{
+				socketData = socketList[i];
 				found = true;
 				break;
 			}
@@ -113,10 +113,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 	if(!found)
 	{
 		freePacket(packet);
-		returnSystemCall(syscallUUID, -1);
 		return;
 	}
-	struct SocketData *socketData = socketList[i];
 
 	if(TCP_control & 0x02) //syn
 	{
@@ -142,11 +140,11 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 				sendPacket("IPv4", newPacket);
 				freePacket(packet);
 
-				this->sendPacket("IPv4", ack_packet);
+				this->sendPacket("IPv4", newPacket);
 				this->freePacket(packet);
 
 				socketData->state = ESTABLISHED;
-				returnSystemCall(socketData->syscallUUID, 0);
+				returnSystemCall(socketData->socketUUID, 0);
 				return;
 			}
 
