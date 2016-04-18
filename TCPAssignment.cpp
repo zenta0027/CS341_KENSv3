@@ -58,16 +58,16 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
-		//this->syscall_connect(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
+		this->syscall_connect(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
 	case LISTEN:
-		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
+		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
-		//this->syscall_accept(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_accept(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND:
 		this->syscall_bind(syscallUUID, pid, param.param1_int,
@@ -80,9 +80,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case GETPEERNAME:
-		//this->syscall_getpeername(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr *>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_getpeername(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr *>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	default:
 		assert(0);
@@ -92,39 +92,76 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
 	struct TCPHeader header;
-	packet->readData(0, &header, sizeof(struct TCPHeader));
+	packet->readData(34, &header, sizeof(struct TCPHeader));
 	uint16_t TCP_control = header.off_control;	
 	bool found = false;
 	struct SocketData *socketData;
 
-	for (int i = 0; i < (int)socketList.size(); i++)
+	uint8_t src_ip[4];
+	uint8_t dest_ip[4];
+	uint32_t src_ip_32;
+	uint32_t dest_ip_32;
+
+	packet->readData(14+12, src_ip, 4);
+	packet->readData(14+16, dest_ip, 4);
+	memcpy(&src_ip_32, src_ip, 4);
+	memcpy(&dest_ip_32, dest_ip, 4);
+
+	if(!check_tcp_checksum(header, src_ip, dest_ip))
 	{
-		if(socketList[i]->sin_port == header.dst_port && (socketList[i]->sin_addr.s_addr == 0/* TODO: Replace with Destination ip */ || socketList[i]->sin_addr.s_addr == INADDR_ANY))
-		{
-			if(socketList[i]->pin_port == header.src_port && socketList[i]->pin_addr.s_addr == 0/* TODO: Replace with Source ip */)
-			{
-				socketData = socketList[i];
-				found = true;
-				break;
-			}
-		}
+		freePacket(packet);
+		return;
 	}
 
+	//printf("src_ip = %d\n", *src_ip);
+	//printf("dest_ip = %d\n", *dest_ip);
+
+	for (int i = 0; i < (int)socketList.size(); i++)
+	{
+		//printf("s_addr = %d\n", socketList[i]->sin_addr.s_addr);
+		if(socketList[i]->sin_port == header.dst_port && (socketList[i]->sin_addr.s_addr == *dest_ip|| socketList[i]->sin_addr.s_addr == INADDR_ANY))
+		{
+			socketData = socketList[i];
+			found = true;
+			break;
+		}
+	}
 	if(!found)
 	{
 		freePacket(packet);
 		return;
+	}
+	switch (socketData->state)
+	{			
+	case State::SYN_SENT:
+
+		break;
+	case State::CLOSED:
+		
+		break;
+	case State::LISTEN:
+		//temporary code
+		socketData->pin_port = header.src_port;
+		socketData->pin_addr.s_addr = *src_ip;
+		//remove this code and fill the switch case
+		if(socketData->pin_port == header.src_port && socketData->pin_addr.s_addr == *src_ip)
+		{
+			
+		}
+		break;
+	case State::ESTABLISHED:
+		break;
 	}
 
 	if(TCP_control & 0x02) //syn
 	{
 		if(TCP_control & 0x10) //syn + ack
 		{
-			if(socketData->state == SYN_SENT)
+			if(socketData->state == State::SYN_SENT)
 			{
- 				struct TCPHeader newHeader;
+ 				struct TCPHeader *newHeader;
 
- 				memcpy(&newHeader, &header, sizeof(TCPHeader));
+ 				memcpy(newHeader, &header, sizeof(TCPHeader));
 
 				//change source port and destination port
 				newHeader.src_port = header.dst_port;
@@ -133,9 +170,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
  				newHeader.off_control = header.off_control | 0x10;
  				newHeader.off_control = header.off_control ^ 0x02; //ack only
 				newHeader.checksum = 0; //TODO: calculate checksum
+				add_tcp_sum(&newHeader, dest_ip_32, src_ip_32);
 
 				Packet *newPacket = allocatePacket(packet->getSize());
-				newPacket->writeData(0, &newHeader, sizeof(TCPHeader));
+				newPacket->writeData(14+12, dest_ip, 4);
+				newPacket->writeData(14+16, src_ip, 4);
+				newPacket->writeData(34, &newHeader, sizeof(TCPHeader));
 
 				sendPacket("IPv4", newPacket);
 				freePacket(packet);
@@ -151,7 +191,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 		}
 		else //syn only
 		{
-			if(socketData->state == LISTEN)
+			if(socketData->state == State::LISTEN)
 			{
 				//backlog not full
 				if(socketData->backlog < 100) // TODO: change
@@ -166,14 +206,17 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 	 				newHeader.off_control = header.off_control | 0x12; //syn + ack
 					newHeader.checksum = 0; //TODO: calculate checksum
+					add_tcp_sum(&newHeader, dest_ip_32, src_ip_32);
 
 					Packet *newPacket = allocatePacket(packet->getSize());
-					newPacket->writeData(0, &newHeader, sizeof(TCPHeader));
+					newPacket->writeData(14+12, dest_ip, 4);
+					newPacket->writeData(14+16, src_ip, 4);
+					newPacket->writeData(34, &newHeader, sizeof(TCPHeader));
 
 					sendPacket("IPv4", newPacket);
 					freePacket(packet);
 
-					socketData->state = SYN_RECEIVED;
+					socketData->state = State::SYN_RECEIVED;
 					return;
 				}
 				else //backlog full
@@ -214,6 +257,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int domain, int ty
 	socketData->pid = pid;
 	socketData->sin_family = 0;
 	socketData->sin_port = 0;
+	socketData->state = State::CLOSED;
 	//socketData->sin_addr = new in_addr;
 	//socketData->sin_addr = NULL;
 	//TODO: add socketData into list
@@ -271,7 +315,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 	//TODO: find socketData from list using sockfd
 	struct SocketData *socketData;
 	bool found = false;
-	for (int i = socketList.size()-1; i >= 0; i--)
+	for (int i = 0; i < (int)socketList.size(); i++)
 	{
 		if (socketList[i]->fd == sockfd)
 		{
@@ -280,12 +324,12 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 			break;
 		}
 	}
-	if(!found || socketData->state != CLOSED) //TODO: do it when cannot find socketData in list
+	if(!found || socketData->state != State::CLOSED) //TODO: do it when cannot find socketData in list
 	{
 		returnSystemCall(syscallUUID, -1);
 		return;
 	}
-	socketData->state = LISTEN;
+	socketData->state = State::LISTEN;
 	socketData->backlog = backlog;
 	//socketData->backlog_queue = new Queue<struct Connection*>;
 	//socketData->handshake_queue = new Queue<struct SocketData*>;
@@ -295,19 +339,14 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int ba
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd,
 	struct sockaddr *clientaddr, socklen_t *addrlen)
-{
-	/*
+{	
 	int fd;
 	bool found = false;
 	for (int i = 0; i < (int)socketList.size(); i++)
 	{
 		if (socketList[i]->fd == sockfd) //&& socketList[i]->sin_family != 0)
 		{
-			printf("find socket!\n");
-			printf("sin_family is now = %d\n", socketList[i]->sin_family);
-			printf("sin_port is now = %d\n", socketList[i]->sin_port);
-			printf("sin_addr_len is now = %d\n", socketList[i]->sin_addr_len);
-			if(socketList[i]->state != LISTEN)
+			if(socketList[i]->state != State::LISTEN)
 			{
 				returnSystemCall(syscallUUID, -1);
 				return;
@@ -328,7 +367,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd,
 		returnSystemCall(syscallUUID, -1);
 		return;
 	}
-	*/
+	
 }
 
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd,
@@ -336,23 +375,15 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd,
 {
 	//TODO: find socketData from list using sockfd
 	bool found = false;
-	printf("bind, socketList.size() = %d\n", socketList.size());
 	//TODO: check if port is already being used by another socket in the list.
 	//however differet IP can use same port number.
 	struct sockaddr_in *addr_in = (struct sockaddr_in *)my_addr;
-	auto port = addr_in->sin_port;
-	unsigned char* c = (unsigned char*)&addr_in->sin_addr;
-	printf("addr bytes = ");
-	for (int i = 0; i < sizeof(in_addr); i++)
-	{
-		printf("%02x ", *c);
-		c++;
-	}
-	printf("\n");
+	auto port = addr_in->sin_port;	
 	for (int i = 0; i < (int)socketList.size(); i++)
 	{
-		//if (memcmp(&addr_in->sin_addr, socketList[i], addrlen) == 0 && socketList[i]->sin_port == port)
-		if(socketList[i]->sin_port == port && (socketList[i]->sin_addr.s_addr == addr_in->sin_addr.s_addr || socketList[i]->sin_addr.s_addr == INADDR_ANY))
+		if(socketList[i]->sin_port == port 
+			&& (socketList[i]->sin_addr.s_addr == addr_in->sin_addr.s_addr 
+				|| socketList[i]->sin_addr.s_addr == INADDR_ANY))
 		{
 			returnSystemCall(syscallUUID, -1);
 			return;
@@ -362,30 +393,12 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int sockfd,
 	{
 		if (socketList[i]->fd == sockfd && socketList[i]->sin_family == 0)
 		{
-			printf("bind target found\n");
-			printf("sin_family was = %d\n", socketList[i]->sin_family);
-			printf("sin_port was = %d\n", socketList[i]->sin_port);
 			socketList[i]->sin_family = addr_in->sin_family;
 			socketList[i]->sin_port = addr_in->sin_port;
 			socketList[i]->sin_addr = addr_in->sin_addr;
-			//void *v1 = (void*)&socketList[i]->sin_addr;
-			//void *v2 = (void*)&addr_in->sin_addr;
-			//memcpy((void*)socketList[i]->sin_addr, (void*)addr_in->sin_addr, sizeof(in_addr));
-			//memcpy(v1, v2, sizeof(in_addr));
-			//memcpy(v1, v2, addrlen);
 			socketList[i]->sin_addr_len = addrlen;
-			printf("sin_family is now = %d\n", socketList[i]->sin_family);
-			printf("sin_port is now = %d\n", socketList[i]->sin_port);
+			
 			found = true;
-
-			c = (unsigned char*)&socketList[i]->sin_addr;
-			printf("copied addr bytes = ");
-			for (int j = 0; j < sizeof(in_addr); j++)
-			{
-				printf("%02x ", *c);
-				c++;
-			}
-			printf("\n");
 		}
 	}
 	if(!found) //TODO: do it when cannot find socketData in list
@@ -408,16 +421,10 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int sockfd,
 	{
 		if (socketList[i]->fd == sockfd) //&& socketList[i]->sin_family != 0)
 		{
-			printf("find socket!\n");
-			printf("sin_family is now = %d\n", socketList[i]->sin_family);
-			printf("sin_port is now = %d\n", socketList[i]->sin_port);
-			printf("sin_addr_len is now = %d\n", socketList[i]->sin_addr_len);
 			//TODO: initialize with findiing socketData
 			addr_in->sin_family = socketList[i]->sin_family;
 			addr_in->sin_port = socketList[i]->sin_port;
 			addr_in->sin_addr = socketList[i]->sin_addr;
-			//memcpy(&addr_in->sin_addr, &socketList[i]->sin_addr, sizeof(in_addr));
-			//memcpy(&addr_in->sin_addr, &socketList[i]->sin_addr, socketList[i]->sin_addr_len);
 			*addrlen = socketList[i]->sin_addr_len;
 			found = true;
 			break;
@@ -478,6 +485,23 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int sockfd,
 void TCPAssignment::timerCallback(void* payload)
 {
 
+}
+
+void TCPAssignment::add_tcp_checksum(TCPHeader *header, uint32_t src_ip, uint32_t dst_ip)
+{
+	header->checksum = 0;
+	header->checksum = htons(~(NetworkUtil::tcp_sum(src_ip, dst_ip, (uint8_t*)header, sizeof(TCPHeader))));
+}
+
+bool TCPAssignment::check_tcp_checksum(TCPHeader* header, uint32_t src_ip, uint32_t dst_ip)
+{
+	uint16_t checksum = header->checksum;
+	TCPHeader *newHeader;
+	memcpy(newHeader, header, sizeof(TCPHeader));
+	newHeader->checksum = 0;
+	//if(checksum == htons(~(NetworkUtil::tcp_sum(src_ip, dst_ip, (uint8_t *)newHeader, sizeof(TCPHeader))))) return true;
+	//return false;
+	return checksum == htons(~(NetworkUtil::tcp_sum(src_ip, dst_ip, (uint8_t *)newHeader, sizeof(TCPHeader))));
 }
 
 
