@@ -269,12 +269,27 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int sockfd,
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int sockfd, int backlog)
 {
 	//TODO: find socketData from list using sockfd
-	if(0) //TODO: do it when cannot find socketData in list
+	struct SocketData *socketData;
+	bool found = false;
+	for (int i = socketList.size()-1; i >= 0; i--)
+	{
+		if (socketList[i]->fd == sockfd)
+		{
+			socketData = socketList[i];
+			found = true;
+			break;
+		}
+	}
+	if(!found || socketData->state != CLOSED) //TODO: do it when cannot find socketData in list
 	{
 		returnSystemCall(syscallUUID, -1);
 		return;
 	}
-
+	socketData->state = LISTEN;
+	socketData->backlog = backlog;
+	//socketData->backlog_queue = new Queue<>;
+	returnSystemCall(syscallUUID, 0);
+	return;
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int sockfd,

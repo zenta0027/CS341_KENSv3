@@ -76,7 +76,7 @@ struct SocketData
 	uint8_t pin_family;
 	uint16_t pin_port;
 	struct in_addr pin_addr;
-
+	
 	State state;
 	int backlog;
 };
